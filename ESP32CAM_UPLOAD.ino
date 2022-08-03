@@ -17,7 +17,7 @@ TO A SERVER USING HTTP MULTIPART POST
 const char* ssid = "YOUR_SSID";
 const char* password = "YOUR_PASS";
 
-String serverName = "1.2.3.4";      		// REPLACE WITH YOUR Raspberry Pi IP ADDRESS OR DOMAIN NAME
+String serverName = "1.2.3.4";      // REPLACE WITH YOUR Raspberry Pi IP ADDRESS OR DOMAIN NAME
 String serverEndpoint = "/upload";        // Needs to match upload server endpoint
 String keyName = "\"myFile\"";            // Needs to match upload server keyName
 const int serverPort = 8080;
@@ -47,8 +47,11 @@ WiFiClient client;
 #define RTCLED_GPIO_NUM   GPIO_NUM_4
 #define DEBUGLED_GPIO_NUM 33
 
-#define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  60          /* Time ESP32 will go to sleep (in seconds) */
+#define uS_TO_S_FACTOR    1000000ULL  /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP_S   60          /* Time ESP32 will go to sleep (in seconds) */
+
+#define WIFI_TIMEOUT_S    30          /* Max WiFI waiting connection time (in seconds) */
+#define SERVER_TIMEOUT_S  10          /* Max response time waiting for server response */
 
 #define EEPROM_SIZE 1
 
@@ -61,7 +64,7 @@ void setup() {
   
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   rtc_gpio_hold_dis(RTCLED_GPIO_NUM);
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP_S * uS_TO_S_FACTOR);
   
   // Turn off debug led
   pinMode(DEBUGLED_GPIO_NUM, OUTPUT);
@@ -185,16 +188,30 @@ void setup() {
   pinMode(FLASHLED_GPIO_NUM, OUTPUT);
   digitalWrite(FLASHLED_GPIO_NUM, LOW);
   rtc_gpio_hold_en(RTCLED_GPIO_NUM);
-  
+
+  int wTimer = WIFI_TIMEOUT_S*1000;
+  long wStartTimer = millis();
+
   WiFi.mode(WIFI_STA);
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);  
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
+  
+  while ((wStartTimer + wTimer) > millis()) {
+      if( WiFi.status() == WL_CONNECTED )
+      {
+        break;
+      }
   }
+    
+  if ( (WiFi.status() != WL_CONNECTED) ){
+    Serial.println("connection to WiFI failed");
+    Serial.println("Going to sleep now ");
+    Serial.flush(); 
+    esp_deep_sleep_start();    
+  }
+  
   Serial.println();
   Serial.print("ESP32-CAM IP Address: ");
   Serial.println(WiFi.localIP());
@@ -302,7 +319,7 @@ String uploadPhoto(camera_fb_t * fb) {
 
     // Read all the lines of the reply from server and print them to Serial
                  
-    int timoutTimer = 10000;
+    int timoutTimer = SERVER_TIMEOUT_S*1000;
     long startTimer = millis();
     boolean state = false;
     
